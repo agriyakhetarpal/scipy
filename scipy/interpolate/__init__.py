@@ -5,8 +5,6 @@ Interpolation (:mod:`scipy.interpolate`)
 
 .. currentmodule:: scipy.interpolate
 
-Debugging
-
 Sub-package for objects used in interpolation.
 
 As listed below, this sub-package contains spline functions and classes,
