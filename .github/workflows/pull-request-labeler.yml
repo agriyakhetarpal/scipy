@@ -6,6 +6,7 @@ on:
 jobs:
   label_pull_request:
     runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'reviewed') }}
     # Permissions needed for labelling Pull Requests automatically
     # https://docs.github.com/en/actions/security-guides/automatic-token-authentication
     permissions:
