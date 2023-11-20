@@ -8,6 +8,8 @@ Input and output (:mod:`scipy.io`)
 SciPy has many modules, classes, and functions available to read data
 from and write data to a variety of file formats.
 
+Debugging
+
 .. seealso:: `NumPy IO routines <https://www.numpy.org/devdocs/reference/routines.io.html>`__
 
 MATLAB® files
