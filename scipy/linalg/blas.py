@@ -2,8 +2,6 @@
 Low-level BLAS functions (:mod:`scipy.linalg.blas`)
 ===================================================
 
-Debugging
-
 This module contains low-level functions from the BLAS library.
 
 .. versionadded:: 0.12.0
