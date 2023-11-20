@@ -3,15 +3,14 @@ on:
   pull_request:
     types: [opened, reopened]
 
-# Permissions needed for labelling Pull Requests automatically
-# https://docs.github.com/en/actions/security-guides/automatic-token-authentication
-permissions:
-   contents: read
-   pull-requests: write
-
 jobs:
   label_pull_request:
     runs-on: ubuntu-latest
+    # Permissions needed for labelling Pull Requests automatically
+    # https://docs.github.com/en/actions/security-guides/automatic-token-authentication
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
     - uses: actions/labeler@v4
       continue-on-error: false
