@@ -13,8 +13,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: thomasjpfan/labeler@v2.5.1
-      continue-on-error: true
-      # if: github.repository == 'scipy/scipy'
+      continue-on-error: false
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
         configuration-path: ".github/label-globs.yml"
