@@ -276,7 +276,101 @@ PKG_CONFIG_PATH = "{project}"
 dependency-versions = "packages: pyodide-build==0.36.0"
 before-build = "bash {project}/tools/wheels/cibw_before_build_pyodide.sh {project}"
 repair-wheel-command = "pyodide auditwheel repair --libdir {project}/.blis/lib --output-dir {dest_dir} {wheel}"
-test-command = "python -m pytest -vra --pyargs scipy -m 'not slow'"
+test-requires = ["pytest", "pytest-reportlog", "hypothesis", "threadpoolctl", "pooch"]
+# The single long-lived WASM interpreter intermittently corrupts its function
+# table and hangs or traps (see gh-25713), so run the suite as many short
+# invocations, each in a fresh interpreter. Small subpackages run whole and
+# large ones are split into buckets of test modules. Every chunk runs under a
+# hard timeout and is retried once in a fresh interpreter, so an intermittent
+# runtime fault does not fail the job, while a genuine test failure still
+# fails twice. Per-chunk pytest-reportlog files are combined at the end.
+test-command = """
+logdir="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/scipy-reportlogs" && mkdir -p "$logdir" && ret=0
+# GNU timeout is absent on macOS hosts; degrade to running without a timeout.
+command -v timeout >/dev/null 2>&1 || timeout() { shift; "$@"; }
+echo "Writing per-chunk report logs to $logdir"
+chunks=$(python - <<'GEN'
+import pathlib
+import pkgutil
+
+import scipy
+
+SPLIT = {"stats": 4, "special": 3, "sparse": 3, "linalg": 3, "optimize": 3,
+         "signal": 2, "interpolate": 2, "ndimage": 2, "io": 2}
+# Modules whose collection is coupled through import-time state must stay in
+# the same chunk: test_discrete_basic mutates _distr_params.distdiscrete at
+# import, and the parametrisations of test_fit and test_sampling read it.
+# Within a chunk pytest collects the targets in sorted order, matching the
+# full suite's alphabetical import order, so consumers that sort before the
+# mutator (such as test_continuous) are safe in any bucket.
+PIN = {"stats": [{"test_discrete_basic.py", "test_fit.py",
+                  "test_sampling.py"}]}
+root = pathlib.Path(scipy.__path__[0])
+for _, sub, ispkg in sorted(pkgutil.iter_modules(scipy.__path__)):
+    if not ispkg:
+        continue
+    n = SPLIT.get(sub)
+    if not n:
+        print(f"{sub}|scipy.{sub}")
+        continue
+    files = sorted(root.glob(f"{sub}/**/tests/test_*.py"))
+    units = []
+    pinned = set()
+    for group in PIN.get(sub, []):
+        unit = [f for f in files if f.name in group]
+        if unit:
+            units.append(unit)
+            pinned.update(unit)
+    units.extend([f] for f in files if f not in pinned)
+    buckets = [[] for _ in range(n)]
+    sizes = [0] * n
+    for unit in sorted(units, key=lambda u: -sum(f.stat().st_size for f in u)):
+        i = sizes.index(min(sizes))
+        buckets[i].extend(unit)
+        sizes[i] += sum(f.stat().st_size for f in unit)
+    for i, bucket in enumerate(buckets):
+        if bucket:
+            mods = ",".join("scipy." + ".".join(f.relative_to(root).with_suffix("").parts)
+                            for f in sorted(bucket))
+            print(f"{sub}-{i + 1}|{mods}")
+GEN
+)
+for chunk in $chunks; do
+  name="${chunk%%|*}"
+  targets=$(echo "${chunk#*|}" | tr ',' ' ')
+  echo "::group::scipy chunk $name"
+  attempt=1
+  while true; do
+    timeout 900 python -m pytest -vra --pyargs $targets -m 'not slow' --report-log="$logdir/$name.jsonl"
+    rc=$?
+    if [ "$rc" -eq 0 ] || [ "$rc" -eq 5 ] || [ "$attempt" -eq 2 ]; then break; fi
+    echo "!! chunk $name exited $rc, retrying once in a fresh interpreter"
+    attempt=2
+  done
+  echo "::endgroup::"
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then ret=1; echo "!! chunk $name failed after retry (exit $rc)"; fi
+done
+cat "$logdir"/*.jsonl > "$logdir/full.jsonl" 2>/dev/null || true
+# Guard: the chunks must cover exactly the tests a plain full-suite run
+# would select. Compare the combined report log against a fresh collection.
+expected=$(python -m pytest --collect-only -q -m 'not slow' --pyargs scipy 2>/dev/null | grep -c "::")
+actual=$(python - "$logdir/full.jsonl" <<'CNT'
+import json
+import sys
+
+ids = set()
+with open(sys.argv[1]) as f:
+    for line in f:
+        report = json.loads(line)
+        if report.get("$report_type") == "TestReport":
+            ids.add(report["nodeid"])
+print(len(ids))
+CNT
+)
+echo "Coverage guard: ran $actual unique tests, full collection selects $expected"
+if [ "$actual" != "$expected" ]; then echo "!! chunked run does not cover the full suite"; ret=1; fi
+exit $ret
+"""
 
 [tool.cibuildwheel.pyodide.config-settings]
 setup-args = ["-Dblas=blis", "-Dlapack=semicolon-lapack"]
