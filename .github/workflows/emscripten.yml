@@ -3,20 +3,14 @@ name: Emscripten/Pyodide
 on:
   push:
     branches:
-      - main
-      - maintenance/**
-  pull_request:
-    branches:
-      - main
-      - maintenance/**
+      - wasm-ci-hang-sampling
   workflow_dispatch:
 
 permissions:
   contents: read # to fetch code (actions/checkout)
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+# No concurrency group on purpose: every push must keep all previous
+# sampling runs alive instead of cancelling them.
 
 jobs:
   get_commit_message:
@@ -24,13 +18,27 @@ jobs:
     uses: ./.github/workflows/commit_message.yml
 
   build_wasm:
-    name: Build & test SciPy for Pyodide
+    name: Sample ${{ matrix.os }} (${{ matrix.run }})
     needs: get_commit_message
     if: >
       needs.get_commit_message.outputs.message == 1
-      && (github.repository == 'scipy/scipy' || github.repository == '')
-    runs-on: ubuntu-latest
+      && github.repository == 'agriyakhetarpal/scipy'
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest]
+        run: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        include:
+          - os: ubuntu-latest
+            run: 13
+          - os: ubuntu-latest
+            run: 14
+          - os: ubuntu-latest
+            run: 15
+          - os: ubuntu-latest
+            run: 16
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
