@@ -3,20 +3,14 @@ name: Emscripten/Pyodide
 on:
   push:
     branches:
-      - main
-      - maintenance/**
-  pull_request:
-    branches:
-      - main
-      - maintenance/**
+      - wasm-ci-node-sampling
   workflow_dispatch:
 
 permissions:
   contents: read # to fetch code (actions/checkout)
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
+# No concurrency group on purpose: every push must keep all previous
+# sampling runs alive instead of cancelling them.
 
 jobs:
   get_commit_message:
@@ -24,20 +18,42 @@ jobs:
     uses: ./.github/workflows/commit_message.yml
 
   build_wasm:
-    name: Build & test SciPy for Pyodide
+    name: Sample node ${{ matrix.node }} (${{ matrix.run }})
     needs: get_commit_message
     if: >
       needs.get_commit_message.outputs.message == 1
-      && (github.repository == 'scipy/scipy' || github.repository == '')
+      && github.repository == 'agriyakhetarpal/scipy'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["v22.23.2", "v24.16.0", "v26.5.1"]
+        run: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
           persist-credentials: false
 
-      - uses: pypa/cibuildwheel@294735312765b09d24a2fbec22660ce817587d55 # v4.1.0
+      - name: Install cibuildwheel and pin the test-phase Node version
+        run: |
+          python3 -m venv "$RUNNER_TEMP/cibw-venv"
+          "$RUNNER_TEMP/cibw-venv/bin/pip" install cibuildwheel==4.1.0
+          "$RUNNER_TEMP/cibw-venv/bin/python" - "${{ matrix.node }}" << 'PY'
+          import sys
+
+          from cibuildwheel.util import resources
+
+          path = resources.NODEJS
+          text = path.read_text()
+          assert 'v24 = "v24.16.0"' in text, text
+          path.write_text(text.replace('v24 = "v24.16.0"', f'v24 = "{sys.argv[1]}"'))
+          print(path.read_text())
+          PY
+
+      - name: Build and test
+        run: '"$RUNNER_TEMP/cibw-venv/bin/cibuildwheel" --only cp314-pyodide_wasm32'
         env:
           CIBW_PLATFORM: pyodide
           CIBW_BUILD: cp314-pyodide_wasm32
