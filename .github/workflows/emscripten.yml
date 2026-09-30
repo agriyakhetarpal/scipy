@@ -14,6 +14,9 @@ permissions:
 
 env:
   FORCE_COLOR: 3
+  # Make the interpreter's string hashing deterministic, to test whether the
+  # run-to-run variation at a fixed test comes from hash randomisation.
+  PYTHONHASHSEED: "0"
   CCACHE_DIR: "${{ github.workspace }}/.ccache"
   CCACHE_MAXSIZE: "300M"
 
