@@ -30,9 +30,12 @@ python -m pip install "meson>=1.5.0" "ninja>=1.8.2"
 BLIS_REPO="https://github.com/pyodide/blis"
 BLIS_REF="pyodide-2.1"
 
-# semicolon-lapack
-SEMILAPACK_VERSION="0.01.3-pre"
-SEMILAPACK_URL="https://github.com/ilayn/semicolon-lapack/archive/refs/tags/v${SEMILAPACK_VERSION}.tar.gz"
+# semicolon-lapack, from the branch behind ilayn/semicolon-lapack#36 until that
+# is merged and released. It stops the Fortran-ABI shim from writing IFAIL when
+# JOBZ = 'N', which overran the buffers SciPy passes and caused the hangs and
+# traps in this job (gh-25713).
+SEMILAPACK_REPO="https://github.com/agriyakhetarpal/semicolon-lapack"
+SEMILAPACK_REF="fix-fabi-shim-ifail-jobz"
 
 # To be consumed via PKG_CONFIG_PATH
 BLAS_PREFIX="${PROJECT_DIR}/.blis"
@@ -82,9 +85,7 @@ popd
 # 2. semicolon-lapack
 # ---------------------------------------------------------------------------
 
-curl -L "${SEMILAPACK_URL}" -o "${BUILD_ROOT}/semilapack.tar.gz"
-mkdir -p "${BUILD_ROOT}/semilapack"
-tar -xzf "${BUILD_ROOT}/semilapack.tar.gz" -C "${BUILD_ROOT}/semilapack" --strip-components=1
+git clone --depth 1 --branch "${SEMILAPACK_REF}" "${SEMILAPACK_REPO}" "${BUILD_ROOT}/semilapack"
 pushd "${BUILD_ROOT}/semilapack"
     CC=emcc CXX=em++ AR=emar \
         meson setup builddir \
